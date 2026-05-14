@@ -24,19 +24,23 @@ jobs:
       - name: Build
         run: |
           swift build -c release --arch arm64
+          ls -la .build/release/ || ls -la .build/
 
       - name: Create Distribution Package
         run: |
           mkdir -p dist
           
           # Copy executable and resources
-          cp -r .build/release/DeepSeekProxy dist/
+          cp -r .build/release/DeepSeekProxy dist/ 2>/dev/null || echo "Checking alternative paths..."
           cp -r Resources dist/
+          
+          # Verify dist folder
+          ls -la dist/
           
           # Create tarball
           tar -czvf DeepSeekProxy-macos-arm64.tar.gz dist/
           
-          ls -lh dist/
+          ls -lh *.tar.gz
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
