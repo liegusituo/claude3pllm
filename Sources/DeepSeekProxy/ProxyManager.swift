@@ -35,6 +35,7 @@ final class ProxyManager: ObservableObject {
     private let logger = Logger(subsystem: "com.deepseek.proxy", category: "ProxyManager")
     private let maxLogEntries = 500
     private var healthCheckTask: Task<Void, Never>?
+    private var terminationHandlerTask: Task<Void, Never>?
 
     private var proxyScriptPath: String? {
         var searched: [String] = []
@@ -193,8 +194,29 @@ final class ProxyManager: ObservableObject {
         proc.standardError = errPipe
         errorPipe = errPipe
 
-        // Read output asynchronously - use nonisolated to avoid capture issues
-        setupOutputHandling(outPipe: outPipe, errPipe: errPipe, proc: proc)
+        // Set up termination handler using a separate task to avoid closure issues
+        terminationHandlerTask?.cancel()
+        terminationHandlerTask = Task {
+            while proc.isRunning {
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+                if Task.isCancelled { break }
+            }
+            guard !Task.isCancelled else { return }
+            let code = proc.terminationStatus
+            if code == 0 {
+                self.addLog(.info, "Proxy process exited normally.")
+            } else {
+                self.addLog(.error, "Proxy process exited with code \(code).")
+            }
+            if case .running = self.status {
+                self.status = .stopped
+            }
+            self.process = nil
+        }
+
+        // Set up output handling using separate tasks for each pipe
+        setupOutputReading(outPipe: outPipe, isError: false)
+        setupOutputReading(outPipe: errPipe, isError: true)
 
         do {
             try proc.run()
@@ -207,50 +229,28 @@ final class ProxyManager: ObservableObject {
         }
     }
 
-    private nonisolated func setupOutputHandling(outPipe: Pipe, errPipe: Pipe, proc: Process) {
-        weak var weakSelf = self
-
-        outPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            if let str = String(data: data, encoding: .utf8) {
-                let lines = str.components(separatedBy: "\n").filter { !$0.isEmpty }
-                Task { @MainActor [weakSelf] in
-                    guard let self = weakSelf else { return }
-                    for line in lines {
-                        self.addLog(self.logLevelFor(line), line)
+    private func setupOutputReading(outPipe: Pipe, isError: Bool) {
+        var buffer = Data()
+        outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let newData = handle.availableData
+            guard !newData.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            buffer.append(newData)
+            
+            while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+                let lineData = Data(buffer[buffer.startIndex..<newlineIndex])
+                if let line = String(data: lineData, encoding: .utf8), !line.isEmpty {
+                    Task { @MainActor [weak self] in
+                        if isError {
+                            self?.addLog(.error, line)
+                        } else {
+                            self?.addLog(self?.logLevelFor(line) ?? .info, line)
+                        }
                     }
                 }
-            }
-        }
-
-        errPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            if let str = String(data: data, encoding: .utf8) {
-                let lines = str.components(separatedBy: "\n").filter { !$0.isEmpty }
-                Task { @MainActor [weakSelf] in
-                    guard let self = weakSelf else { return }
-                    for line in lines {
-                        self.addLog(.error, line)
-                    }
-                }
-            }
-        }
-
-        proc.terminationHandler = { [weakSelf] proc in
-            Task { @MainActor [weakSelf] in
-                guard let self = weakSelf else { return }
-                let code = proc.terminationStatus
-                if code == 0 {
-                    self.addLog(.info, "Proxy process exited normally.")
-                } else {
-                    self.addLog(.error, "Proxy process exited with code \(code).")
-                }
-                if case .running = self.status {
-                    self.status = .stopped
-                }
-                self.process = nil
+                buffer = Data(buffer[buffer.index(after: newlineIndex)...])
             }
         }
     }
@@ -264,6 +264,7 @@ final class ProxyManager: ObservableObject {
 
         addLog(.info, "Stopping DeepSeek Proxy...")
         healthCheckTask?.cancel()
+        terminationHandlerTask?.cancel()
 
         // Clear the pipe handlers to prevent retaining references
         if let outPipe = outputPipe {
@@ -281,7 +282,7 @@ final class ProxyManager: ObservableObject {
         }
 
         // Wait a moment and check
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             if proc.isRunning {
                 // If still running, force interrupt
                 proc.interrupt()
