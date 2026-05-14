@@ -73,11 +73,10 @@ final class ProxyManager: ObservableObject {
 
         // 3. Project root (binary is .build/arm64-apple-macosx/release/DeepSeekProxy)
         if let exeURL = Bundle.main.executableURL {
-            // Go up: release -> arm64-apple-macosx -> .build -> project root
-            var projectRoot = exeURL
-                .deletingLastPathComponent() // release/
-                .deletingLastPathComponent() // arm64-apple-macosx/
-                .deletingLastPathComponent() // .build/
+            let projectRoot = exeURL
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
             let resourcesPath = projectRoot.appendingPathComponent("Resources/deepseek_proxy.py").path
             if FileManager.default.fileExists(atPath: resourcesPath) {
                 logger.debug("Found script at project root: \(resourcesPath)")
@@ -194,48 +193,8 @@ final class ProxyManager: ObservableObject {
         proc.standardError = errPipe
         errorPipe = errPipe
 
-        // Read output asynchronously
-        outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            if let str = String(data: data, encoding: .utf8) {
-                let lines = str.components(separatedBy: "\n").filter { !$0.isEmpty }
-                for line in lines {
-                    Task { @MainActor in
-                        self?.addLog(self?.logLevelFor(line) ?? .info, line)
-                    }
-                }
-            }
-        }
-
-        errPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            if let str = String(data: data, encoding: .utf8) {
-                let lines = str.components(separatedBy: "\n").filter { !$0.isEmpty }
-                for line in lines {
-                    Task { @MainActor in
-                        self?.addLog(.error, line)
-                    }
-                }
-            }
-        }
-
-        // Termination handler
-        proc.terminationHandler = { [weak self] proc in
-            Task { @MainActor in
-                let code = proc.terminationStatus
-                if code == 0 {
-                    self?.addLog(.info, "Proxy process exited normally.")
-                } else {
-                    self?.addLog(.error, "Proxy process exited with code \(code).")
-                }
-                if case .running = self?.status {
-                    self?.status = .stopped
-                }
-                self?.process = nil
-            }
-        }
+        // Read output asynchronously - use nonisolated to avoid capture issues
+        setupOutputHandling(outPipe: outPipe, errPipe: errPipe, proc: proc)
 
         do {
             try proc.run()
@@ -245,6 +204,54 @@ final class ProxyManager: ObservableObject {
         } catch {
             status = .error(error.localizedDescription)
             addLog(.error, "Failed to launch proxy: \(error.localizedDescription)")
+        }
+    }
+
+    private nonisolated func setupOutputHandling(outPipe: Pipe, errPipe: Pipe, proc: Process) {
+        weak var weakSelf = self
+
+        outPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            if let str = String(data: data, encoding: .utf8) {
+                let lines = str.components(separatedBy: "\n").filter { !$0.isEmpty }
+                Task { @MainActor [weakSelf] in
+                    guard let self = weakSelf else { return }
+                    for line in lines {
+                        self.addLog(self.logLevelFor(line), line)
+                    }
+                }
+            }
+        }
+
+        errPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            if let str = String(data: data, encoding: .utf8) {
+                let lines = str.components(separatedBy: "\n").filter { !$0.isEmpty }
+                Task { @MainActor [weakSelf] in
+                    guard let self = weakSelf else { return }
+                    for line in lines {
+                        self.addLog(.error, line)
+                    }
+                }
+            }
+        }
+
+        proc.terminationHandler = { [weakSelf] proc in
+            Task { @MainActor [weakSelf] in
+                guard let self = weakSelf else { return }
+                let code = proc.terminationStatus
+                if code == 0 {
+                    self.addLog(.info, "Proxy process exited normally.")
+                } else {
+                    self.addLog(.error, "Proxy process exited with code \(code).")
+                }
+                if case .running = self.status {
+                    self.status = .stopped
+                }
+                self.process = nil
+            }
         }
     }
 
@@ -274,7 +281,7 @@ final class ProxyManager: ObservableObject {
         }
 
         // Wait a moment and check
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             if proc.isRunning {
                 // If still running, force interrupt
                 proc.interrupt()
@@ -288,7 +295,7 @@ final class ProxyManager: ObservableObject {
                 self?.addLog(.warn, "Force killing proxy process...")
                 kill(proc.processIdentifier, SIGKILL)
             }
-            
+
             // Always clean up state
             self?.status = .stopped
             self?.process = nil
@@ -302,7 +309,7 @@ final class ProxyManager: ObservableObject {
         healthCheckTask?.cancel()
         healthCheckTask = Task {
             var currentRetry = 0
-            
+
             while currentRetry < retryCount && !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 guard !Task.isCancelled else { return }
@@ -332,14 +339,14 @@ final class ProxyManager: ObservableObject {
                         addLog(.warn, "Health check attempt \(currentRetry + 1)/\(retryCount): \(error.localizedDescription)")
                     }
                 }
-                
+
                 currentRetry += 1
                 // If not the last retry, wait a bit before trying again
                 if currentRetry < retryCount {
                     try? await Task.sleep(nanoseconds: UInt64(1.5 * 1_000_000_000))
                 }
             }
-            
+
             // All retries failed
             if !Task.isCancelled {
                 self.status = .error("Cannot reach proxy on port \(settings.port)")
@@ -364,17 +371,17 @@ final class ProxyManager: ObservableObject {
             return true
         }
         defer { close(socketFileDescriptor) }
-        
+
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = in_port_t(port).bigEndian
         addr.sin_addr.s_addr = inet_addr("127.0.0.1")
-        
+
         let bindResult = withUnsafeMutablePointer(to: &addr) { ptr in
             bind(socketFileDescriptor, UnsafeRawPointer(ptr).assumingMemoryBound(to: sockaddr.self), socklen_t(MemoryLayout<sockaddr_in>.size))
         }
-        
+
         return bindResult == 0
     }
 
@@ -382,7 +389,7 @@ final class ProxyManager: ObservableObject {
 
     private func addLog(_ level: LogEntry.LogLevel, _ message: String) {
         guard settings.loggingEnabled else { return }
-        
+
         logs.append(LogEntry(timestamp: Date(), message: message, level: level))
         if logs.count > maxLogEntries {
             logs.removeFirst(logs.count - maxLogEntries)
