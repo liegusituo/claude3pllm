@@ -3,6 +3,25 @@ import Combine
 import OSLog
 import Darwin
 
+actor OutputBufferActor {
+    private var buffer = Data()
+    
+    func process(data: Data) -> [String] {
+        buffer.append(data)
+        var lines: [String] = []
+        
+        while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+            let lineData = Data(buffer[buffer.startIndex..<newlineIndex])
+            if let line = String(data: lineData, encoding: .utf8), !line.isEmpty {
+                lines.append(line)
+            }
+            buffer = Data(buffer[buffer.index(after: newlineIndex)...])
+        }
+        
+        return lines
+    }
+}
+
 /// Manages the Python deepseek_proxy.py process lifecycle.
 @MainActor
 final class ProxyManager: ObservableObject {
@@ -230,27 +249,26 @@ final class ProxyManager: ObservableObject {
     }
 
     private func setupOutputReading(outPipe: Pipe, isError: Bool) {
-        var buffer = Data()
-        outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        let actor = OutputBufferActor()
+        
+        outPipe.fileHandleForReading.readabilityHandler = { handle in
             let newData = handle.availableData
             guard !newData.isEmpty else {
                 handle.readabilityHandler = nil
                 return
             }
-            buffer.append(newData)
             
-            while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
-                let lineData = Data(buffer[buffer.startIndex..<newlineIndex])
-                if let line = String(data: lineData, encoding: .utf8), !line.isEmpty {
-                    Task { @MainActor [weak self] in
+            Task {
+                let lines = await actor.process(data: newData)
+                for line in lines {
+                    await MainActor.run {
                         if isError {
-                            self?.addLog(.error, line)
+                            self.addLog(.error, line)
                         } else {
-                            self?.addLog(self?.logLevelFor(line) ?? .info, line)
+                            self.addLog(self.logLevelFor(line), line)
                         }
                     }
                 }
-                buffer = Data(buffer[buffer.index(after: newlineIndex)...])
             }
         }
     }
