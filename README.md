@@ -83,32 +83,20 @@ swift build -c release --arch arm64
 
 ### 2. Claude for Mac 配置
 
-在 Claude Desktop 配置文件中添加自定义提供商：
+在 Claude Desktop 中配置第三方推理：
 
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%/Claude/claude_desktop_config.json`
-- Linux: `~/.config/Claude/claude_desktop_config.json`
-
-添加以下配置：
-
-```json
-{
-  "provider": "custom",
-  "base_url": "http://127.0.0.1:9797"
-}
-```
-
-或者如果是多个提供商配置：
-
-```json
-{
-  "providers": {
-    "deepseek": {
-      "base_url": "http://127.0.0.1:9797"
-    }
-  }
-}
-```
+1. 打开 Claude Desktop
+2. 点击设置 → "Configure third-party inference"
+3. 在 **Connection** 部分：
+   - 选择 **Gateway**
+   - **Gateway base URL**: `http://127.0.0.1:9797`
+   - **Gateway API key**: 可以任意填写（代理会使用你在 DeepSeek Proxy 中配置的 API Key）
+   - **Gateway auth scheme**: 选择 `bearer`
+   
+4. 在 **Identity & models** 部分：
+   - 在 **Model list** 中点击添加模型，添加以下两个模型：
+     - **Model ID**: `claude-deepseek-v4-flash`，开启 **Offer 1M-context variant**
+     - **Model ID**: `claude-deepseek-v4-pro`，开启 **Offer 1M-context variant**
 
 ### 3. Codex 配置
 
