@@ -1,7 +1,5 @@
 # DeepSeek Proxy
 
----
-
 ## 🌏 选择语言 / Choose Language
 
 ### [🇨🇳 中文](README_CN.md) | [🇺🇸 English](README_EN.md)
