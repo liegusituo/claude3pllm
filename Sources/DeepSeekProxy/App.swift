@@ -9,7 +9,51 @@ struct DeepSeekProxyApp: App {
         MenuBarExtra {
             MenuBarContent(proxyManager: proxyManager)
         } label: {
-            Label("DeepSeek Proxy", systemImage: "antenna.radiowaves.left.and.right")
+            MenuBarIcon(status: proxyManager.status)
+        }
+    }
+}
+
+struct MenuBarIcon: View {
+    let status: ProxyStatus
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 10, height: 10)
+
+            Image(systemName: iconName)
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(statusColor)
+        }
+        .frame(width: 20, height: 20)
+    }
+
+    private var iconName: String {
+        switch status {
+        case .stopped:
+            return "antenna.radiowaves.left.and.right.slash"
+        case .starting:
+            return "antenna.radiowaves.left.and.right"
+        case .running:
+            return "antenna.radiowaves.left.and.right"
+        case .error:
+            return "antenna.radiowaves.left.and.right.trianglebadge.exclamationmark"
+        }
+    }
+
+    private var statusColor: Color {
+        switch status {
+        case .stopped:
+            return .gray
+        case .starting:
+            return .orange
+        case .running:
+            return .green
+        case .error:
+            return .red
         }
     }
 }
