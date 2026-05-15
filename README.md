@@ -8,7 +8,7 @@
 
 ## 📖 项目简介 / Project Overview
 
-在 macOS 上运行 Claude for Mac 和 Codex 使用 DeepSeek v4 flash/pro 的代理工具。
+在 macOS 上运行 Claude for Mac 和 Codex Desktop 使用 DeepSeek v4 flash/pro 的代理工具。
 
 A proxy tool for running Claude for Mac and Codex on macOS using DeepSeek v4 flash/pro models.
 
