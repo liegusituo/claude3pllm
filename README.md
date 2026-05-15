@@ -10,6 +10,7 @@
 - 📊 **连接日志**：实时显示客户端连接和模型转换日志
 - 🔒 **安全存储**：API Key 安全存储在本地
 - ⚙️ **灵活配置**：可自定义端口和多个 API 密钥
+- 📱 **动态图标**：菜单栏图标实时显示代理状态（运行/停止/错误）
 
 ## 支持的模型映射
 
@@ -28,7 +29,22 @@
 
 ## 安装步骤
 
-### 方法一：从 GitHub Actions 下载（推荐）
+### 方法一：从 Gitee 下载（推荐国内用户）
+
+1. 访问 [Releases](https://gitee.com/42589378/claude3pllm/releases) 页面
+2. 点击最新版本（v1.0.5）的 `DeepSeekProxy-v1.0.5-macOS.zip` 下载
+3. 解压下载的文件：
+   ```bash
+   unzip DeepSeekProxy-v1.0.5-macOS.zip
+   cd DeepSeekProxy-v1.0.5-macOS
+   chmod +x DeepSeekProxy
+   ```
+4. 运行应用：
+   ```bash
+   ./DeepSeekProxy
+   ```
+
+### 方法二：从 GitHub 下载（备选）
 
 1. 访问 [Actions](https://github.com/liegusituo/claude3pllm/actions) 页面
 2. 点击最新的 "Build and Release" 运行（带有绿色 ✅ 标记）
@@ -44,10 +60,10 @@
    ./DeepSeekProxy
    ```
 
-### 方法二：从源码编译
+### 方法三：从源码编译
 
 ```bash
-git clone https://github.com/liegusituo/claude3pllm.git
+git clone https://gitee.com/42589378/claude3pllm.git
 cd claude3pllm
 swift build -c release --arch arm64
 ./.build/release/DeepSeekProxy
@@ -109,7 +125,12 @@ base_url = "http://127.0.0.1:9797/v1"
 2. 在菜单栏中找到代理图标
 3. 点击图标 → 设置，配置 DeepSeek API Key
 4. 点击"启动代理"按钮
-5. 状态显示"运行中"后，即可使用 Claude 或 Codex
+5. 观察菜单栏图标颜色变化：
+   - 🟢 绿色：运行中
+   - 🟠 橙色：启动中
+   - ⚫ 灰色：已停止
+   - 🔴 红色：发生错误
+6. 状态显示"运行中"后，即可使用 Claude 或 Codex
 
 ## 语言切换
 
@@ -124,9 +145,26 @@ base_url = "http://127.0.0.1:9797/v1"
 - 查看错误和警告
 - 可以通过设置中的开关启用/禁用日志记录
 
-## 界面预览
+## 版本历史
 
-[截图待添加]
+### v1.0.5 (2026-05-15)
+- ✅ 动态菜单栏图标，根据代理状态显示不同颜色
+- 🐛 优化代理状态管理
+- 🐛 改进错误处理机制
+
+### v1.0.4 (2026-05-15)
+- 🌍 添加中文/英文界面切换功能
+- 🐛 修复 Claude Desktop 兼容性参数冲突
+
+### v1.0.3 (2026-05-14)
+- 📊 增强日志功能，显示详细连接信息
+- 🔧 添加日志开关
+
+### v1.0.2 (2026-05-14)
+- ⚙️ 默认端口从 8787 改为 9797
+
+### v1.0.1 (2026-05-13)
+- 🐛 修复应用启动错误处理
 
 ## 开发者说明
 
@@ -176,10 +214,13 @@ A: 确保代理已启动（状态显示"运行中"），检查 API Key 是否正
 **Q: 如何查看代理日志？**
 A: 点击菜单栏图标 → 日志，在打开的窗口中查看。
 
+**Q: 菜单栏图标不显示？**
+A: 检查是否授予了系统辅助功能权限。
+
 ## License
 
 MIT License
 
 ## 问题反馈
 
-如有问题，请提交 [Issue](https://github.com/liegusituo/claude3pllm/issues)。
+如有问题，请提交 [Issue](https://gitee.com/42589378/claude3pllm/issues)。
